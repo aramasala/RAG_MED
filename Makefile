@@ -18,6 +18,10 @@ help:
 	@echo ""
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "$(GREEN)%-20s$(NC) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
+# Auto-activation function
+run-in-venv = $(VENV_ACTIVATE) && $(1)
+
+# Main targets
 setup: check-python venv deps
 	@echo "$(GREEN) Setup complete!$(NC)"
 	@echo ""
@@ -39,25 +43,26 @@ check-venv:
 
 deps: check-venv
 	@echo "$(BLUE)Installing dependencies...$(NC)"
-	$(VENV_ACTIVATE) && pip install --upgrade pip
-	$(VENV_ACTIVATE) && pip install poetry
-	$(VENV_ACTIVATE) && poetry install
+	@$(call run-in-venv, pip install --upgrade pip)
+	@$(call run-in-venv, pip install poetry)
+	@$(call run-in-venv, poetry install)
 	@echo "$(GREEN) Dependencies installed$(NC)"
 
 install: deps
 	@echo "$(GREEN) Installation complete$(NC)"
 
+# Development commands
 test: check-venv
 	@echo "$(BLUE)Running tests...$(NC)"
-	$(VENV_ACTIVATE) && python -m pytest -v
+	@$(call run-in-venv, python -m pytest -v)
 
 lint: check-venv
 	@echo "$(BLUE)Running linter...$(NC)"
-	$(VENV_ACTIVATE) && python -m ruff check .
+	@$(call run-in-venv, python -m ruff check .)
 
 format: check-venv
 	@echo "$(BLUE)Formatting code...$(NC)"
-	$(VENV_ACTIVATE) && python -m black .
+	@$(call run-in-venv, python -m black .)
 
 check-all: lint test
 	@echo "$(GREEN) All checks passed$(NC)"
@@ -68,7 +73,7 @@ clean-pdf: check-venv
 		exit 1; \
 	fi
 	@echo "$(BLUE)Cleaning PDF(s)...$(NC)"
-	cd $(VENV_DIR)/bin && ./rag-med clean $(ARGS)
+	@$(call run-in-venv, rag-med clean $(ARGS))
 
 generate-qa: check-venv
 	@if [ -z "$(ARGS)" ]; then \
@@ -76,7 +81,15 @@ generate-qa: check-venv
 		exit 1; \
 	fi
 	@echo "$(BLUE)Generating QA from PDF...$(NC)"
-	cd $(VENV_DIR)/bin && ./rag-med generate "$(ARGS)"
+	@$(call run-in-venv, rag-med generate $(ARGS))
+
+shell: check-venv
+	@echo "$(BLUE)Opening Python shell in virtual environment...$(NC)"
+	@$(call run-in-venv, python)
+
+activate:
+	@echo "$(YELLOW)To activate virtual environment manually:$(NC)"
+	@echo "  source $(VENV_DIR)/bin/activate"
 
 clean:
 	@echo "$(BLUE)Cleaning project...$(NC)"
@@ -85,6 +98,13 @@ clean:
 	find . -type f -name "*.pyc" -delete 2>/dev/null || true
 	rm -rf .pytest_cache .ruff_cache .coverage htmlcov *.egg-info dist build
 	@echo "$(GREEN) Project cleaned$(NC)"
+
+clean-all: clean
+	@echo "$(BLUE)Cleaning all generated files...$(NC)"
+	rm -f qa_result.json
+	rm -f qa_result_valueai_eval.json
+	rm -f *_cleaned.pdf
+	@echo "$(GREEN) All cleaned$(NC)"
 
 reset: clean setup
 	@echo "$(GREEN) Project reset complete$(NC)"
@@ -96,6 +116,7 @@ info:
 	@if [ -d "$(VENV_DIR)" ]; then \
 		echo "  Virtual env: $(VENV_DIR)"; \
 		echo "  Python (venv): $$($(PYTHON) --version 2>/dev/null)"; \
+		echo "  rag-med path: $$($(call run-in-venv, which rag-med) 2>/dev/null)"; \
 	else \
 		echo "  Virtual env: Not created"; \
 	fi
