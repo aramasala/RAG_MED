@@ -1,0 +1,12 @@
+# Project requirements for Docker and documentation
+# These are installed before the main poetry packages
+
+# Build tools
+poetry>=1.8.0
+
+# Python version
+python>=3.10.0
+
+# System dependencies (if needed)
+# build-essential
+# python3-dev

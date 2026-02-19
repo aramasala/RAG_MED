@@ -1,0 +1,6 @@
+#!/home/a/Desktop/RAG_MED/.venv/bin/python3
+import sys
+from pbs_installer.__main__ import main
+if __name__ == '__main__':
+    sys.argv[0] = sys.argv[0].removesuffix('.exe')
+    sys.exit(main())

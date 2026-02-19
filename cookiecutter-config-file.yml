@@ -1,0 +1,20 @@
+
+default_context:
+  project_name: "my-python-project"
+  project_slug: "my_python_project"
+  project_description: "Awesome `my-python-project` project!"
+  username: "Awesome user"
+  email: "awesome-user@example.com"
+  vcs_remote_type: "bitbucket"
+  minimal_python_version: "3.13"
+  version: "0.1.0"
+  line_length: "120"
+  package_manager: "poetry"
+
+  python_linter: "ruff"
+  python_formatter: "ruff"
+  python_type_checker: "mypy"
+
+  include_cli_example: "n"
+  include_docker_sample: "n"
+  include_notebooks_sample: "y"

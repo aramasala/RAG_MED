@@ -1,0 +1,6 @@
+#!/home/a/Desktop/RAG_MED/.venv/bin/python
+import sys
+from rag_med.cli import app
+
+if __name__ == '__main__':
+    sys.exit(app())

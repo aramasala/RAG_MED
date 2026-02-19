@@ -1,0 +1,42 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+
+# Logs
+*.log
+
+# Environment files
+.env
+.env.*
+.env/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+*.egg
+
+# PDFs
+*.pdf
+*_cleaned.pdf
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary/backup
+*.tmp
+*.bak
+
+# JSON files
+*.json
