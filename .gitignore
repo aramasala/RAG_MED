@@ -1,42 +1,64 @@
-# Python cache
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
-
-# Virtual environment
+*.so
+.Python
+.venv/
 venv/
-
-# Logs
-*.log
-
-# Environment files
-.env
-.env.*
-.env/
-
-# Build artifacts
+ENV/
+env/
 build/
+develop-eggs/
 dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
 *.egg-info/
+.installed.cfg
 *.egg
 
-# PDFs
-*.pdf
-*_cleaned.pdf
+# Testing
+.coverage
+.pytest_cache/
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
 
-# Editors
+# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
 
-# OS
-.DS_Store
-Thumbs.db
+# Environment
+.env
+.env.*
+!.env.example
 
-# Temporary/backup
-*.tmp
-*.bak
+# Project specific
+qa_result*.json
+*_cleaned.pdf
+tmp/
+temp/
 
-# JSON files
-*.json
+# Documentation
+docs/_build/
+docs/api/
+site/
+
+# Notebooks
+notebooks/.ipynb_checkpoints/
+*.ipynb
+
+# Reports
+reports/*.html
+reports/*.json
