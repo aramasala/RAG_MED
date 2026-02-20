@@ -117,20 +117,33 @@ for result in results:
 
 ```
 RAG_MED/
+├── configs/              # Configuration and paths (settings, PROJECT_DPATH)
+│   ├── __init__.py
+│   ├── settings.py
+│   └── paths.py
+├── docs/                 # Documentation
+├── notebooks/            # Jupyter notebooks (demos, experiments)
+├── reports/              # Generated reports and QA outputs
+├── scripts/              # Helper scripts (clean_pdf.sh, generate_qa.sh)
 ├── rag_med/              # Main package
 │   ├── __init__.py
 │   ├── cli.py            # CLI interface
-│   ├── config.py         # Configuration settings
-│   ├── paths.py          # Path utilities
 │   ├── pdf_cleaner/      # PDF cleaning module
 │   │   ├── __init__.py
 │   │   └── cleaner.py
-│   └── qa_generator/     # QA generation module
+│   ├── qa_generator/     # QA generation module
+│   │   ├── __init__.py
+│   │   ├── generator.py
+│   │   └── models.py
+│   ├── evaluation/       # Answer evaluation metrics
+│   │   ├── __init__.py
+│   │   └── metrics.py
+│   └── valueai/          # ValueAI RAG client
 │       ├── __init__.py
-│       ├── generator.py
-│       └── models.py
+│       └── client.py
 ├── tests/                # Tests
 │   ├── unit/
+│   ├── integration/
 │   └── conftest.py
 ├── pyproject.toml        # Poetry configuration
 ├── Makefile              # Build commands

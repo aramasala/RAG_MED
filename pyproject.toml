@@ -63,6 +63,7 @@ exclude = [
     ".direnv",
     ".eggs",
     ".git",
+    "notebooks",
     ".git-rewrite",
     ".hg",
     ".ipynb_checkpoints",
@@ -149,7 +150,7 @@ convention = "numpy"
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S", "D", "INP001", "PLR2004", "PT011", "PLC0415"]
 "rag_med/__init__.py" = ["D400", "D103", "E402", "RUF022", "I001"]
-"rag_med/cli.py" = ["PLC0415", "E501"]
+"rag_med/cli.py" = ["PLC0415", "E501", "B008", "FBT001", "FBT002", "FBT003", "PLR0913", "C901"]
 
 [tool.ruff.format]
 # Like Black, use double quotes for strings.

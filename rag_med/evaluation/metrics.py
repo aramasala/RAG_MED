@@ -43,11 +43,7 @@ def token_f1(reference: str, candidate: str) -> dict[str, float]:
 
     precision = overlap / max(1, len(cand_tokens))
     recall = overlap / max(1, len(ref_tokens))
-    if precision + recall == 0:
-        f1 = 0.0
-    else:
-        f1 = 2 * precision * recall / (precision + recall)
-
+    f1 = 0.0 if precision + recall == 0 else 2 * precision * recall / (precision + recall)
     return {"precision": precision, "recall": recall, "f1": f1}
 
 
@@ -79,10 +75,7 @@ def rouge_l_f1(reference: str, candidate: str) -> dict[str, float]:
     lcs = _lcs_length(ref_tokens, cand_tokens)
     precision = lcs / max(1, len(cand_tokens))
     recall = lcs / max(1, len(ref_tokens))
-    if precision + recall == 0:
-        f1 = 0.0
-    else:
-        f1 = 2 * precision * recall / (precision + recall)
+    f1 = 0.0 if precision + recall == 0 else 2 * precision * recall / (precision + recall)
     return {"precision": precision, "recall": recall, "f1": f1}
 
 

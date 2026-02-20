@@ -52,16 +52,16 @@ class ValueAIRagClient:
             data = r.json()
             token = data.get("authorization_token")
             if not token:
-                raise ValueError(f"Token not found in response: {data}")
-
+                msg = f"Token not found in response: {data}"
+                raise ValueError(msg)
+        except requests.exceptions.RequestException as e:
+            logger.exception("Failed to get token")
+            if hasattr(e, "response") and e.response:
+                logger.exception("Response body: %s", e.response.text)
+            raise
+        else:
             logger.debug("Token received successfully")
             return token
-
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to get token: {e}")
-            if hasattr(e, "response") and e.response:
-                logger.error(f"Response body: {e.response.text}")
-            raise
 
     def create_predict(self, question: str) -> int:
         """Create a RAG prediction task and return its id."""
@@ -83,14 +83,14 @@ class ValueAIRagClient:
             r.raise_for_status()
             data = r.json()
             predict_id = int(data["id"])
-            logger.debug(f"Task created with id: {predict_id}")
-            return predict_id
-
+            logger.debug("Task created with id: %s", predict_id)
         except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to create predict task: {e}")
+            logger.exception("Failed to create predict task")
             if hasattr(e, "response") and e.response:
-                logger.error(f"Response body: {e.response.text}")
+                logger.exception("Response body: %s", e.response.text)
             raise
+        else:
+            return predict_id
 
     def poll_result(self, predict_id: int) -> dict:
         """Poll a prediction until it is completed or failed."""
@@ -99,9 +99,8 @@ class ValueAIRagClient:
 
         while True:
             if time.monotonic() > deadline:
-                raise TimeoutError(
-                    f"ValueAI RAG predict timed out after {self._config.timeout_seconds}s"
-                )
+                msg = f"ValueAI RAG predict timed out after {self._config.timeout_seconds}s"
+                raise TimeoutError(msg)
 
             try:
                 r = requests.get(url, headers=self._get_headers(), timeout=30)
@@ -125,12 +124,13 @@ class ValueAIRagClient:
                     result = data.get("result", {})
                     if result and "message" in result:
                         error_msg = result["message"]
-                    raise RuntimeError(f"Task failed: {error_msg}")
+                    msg = f"Task failed: {error_msg}"
+                    raise RuntimeError(msg)
 
                 time.sleep(self._config.poll_interval_seconds)
 
-            except requests.exceptions.RequestException as e:
-                logger.error(f"Error polling task: {e}")
+            except requests.exceptions.RequestException:
+                logger.exception("Error polling task")
                 time.sleep(self._config.poll_interval_seconds)
 
     def ask(self, question: str) -> str:
@@ -141,7 +141,8 @@ class ValueAIRagClient:
         data = self.poll_result(predict_id)
 
         if data.get("status") != "completed":
-            raise RuntimeError(f"ValueAI RAG task failed: {data}")
+            msg = f"ValueAI RAG task failed: {data}"
+            raise RuntimeError(msg)
 
         result = data.get("result") or {}
         response = result.get("response")
