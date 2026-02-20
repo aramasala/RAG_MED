@@ -6,7 +6,7 @@ from pathlib import Path
 
 import fitz
 
-from ..config import settings
+from configs.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -78,8 +78,8 @@ def clean_pdf(input_pdf: Path, output_pdf: Path | None = None) -> bool:
         doc = fitz.open(input_pdf)
         total_pages = doc.page_count
         logger.debug(f"PDF открыт, всего страниц: {total_pages}")
-    except Exception as e:
-        logger.error(f"Ошибка открытия PDF: {e}")
+    except Exception:
+        logger.exception("Ошибка открытия PDF")
         return False
 
     start_page = find_text_in_pdf(input_pdf, settings.start_section_text)
@@ -109,10 +109,11 @@ def clean_pdf(input_pdf: Path, output_pdf: Path | None = None) -> bool:
 
     try:
         doc.save(output_pdf, garbage=4, deflate=True, clean=True)
+    except Exception:
+        logger.exception("Ошибка сохранения")
+        doc.close()
+        return False
+    else:
         doc.close()
         logger.info(f"Сохранено: {output_pdf}")
         return True
-    except Exception as e:
-        logger.error(f"Ошибка сохранения: {e}")
-        doc.close()
-        return False

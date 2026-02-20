@@ -10,10 +10,11 @@ import requests
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pypdf import PdfReader
 
-from ..config import settings
-from ..evaluation.metrics import evaluate_answer_pair
-from ..valueai.client import ValueAIRagClient, ValueAIRagClientConfig
-from .models import QAResult
+from configs.settings import settings
+from rag_med.evaluation.metrics import evaluate_answer_pair
+from rag_med.valueai.client import ValueAIRagClient, ValueAIRagClientConfig
+
+from rag_med.qa_generator.models import QAResult
 
 logger = logging.getLogger(__name__)
 
@@ -71,13 +72,13 @@ def generate_qa(chunk: str, chunk_index: int = 1) -> QAResult:
                 answer = line_clean.replace("Ответ:", "").strip()
 
         if not question or not answer:
-            lines = [l.strip() for l in generated_text.split("\n") if l.strip()]
+            lines = [line.strip() for line in generated_text.split("\n") if line.strip()]
             if len(lines) >= 2:
                 question = lines[0]
                 answer = lines[1]
 
     except Exception as e:
-        logger.error(f"Ошибка при вызове модели Ollama: {e}")
+        logger.exception("Ошибка при вызове модели Ollama")
         generated_text = f"Ошибка: модель не ответила - {e!s}"
         question = "Ошибка"
         answer = "Ошибка"
@@ -112,21 +113,15 @@ def _prompt_num_questions(max_questions: int, default: int) -> int:
         try:
             value = int(raw)
         except ValueError:
-            print("Введите целое число.")
+            logger.info("Введите целое число.")
             continue
         if 1 <= value <= max_questions:
             return value
-        print(f"Введите число в диапазоне 1..{max_questions}.")
+        logger.info("Введите число в диапазоне 1..%s.", max_questions)
 
 
 def _build_valueai_client() -> ValueAIRagClient:
     """Build ValueAI client with credentials."""
-    print(f" DEBUG - Building ValueAI client")
-    print(f" DEBUG - Username: {settings.valueai_username}")
-    print(f" DEBUG - Password exists: {bool(settings.valueai_password)}")
-    print(f" DEBUG - Base URL: {settings.valueai_base_url}")
-    print(f" DEBUG - RAG ID: {settings.valueai_rag_id}")
-
     if not settings.valueai_username or not settings.valueai_password:
         raise ValueError(
             "ValueAI credentials are not configured. "
@@ -143,6 +138,63 @@ def _build_valueai_client() -> ValueAIRagClient:
         timeout_seconds=settings.valueai_timeout_seconds,
     )
     return ValueAIRagClient(config)
+
+
+def _run_valueai_evaluation(
+    results: list[QAResult],
+    pdf_path: Path,
+    num_questions: int,
+    output_file: Path,
+    summary_file: Path | None,
+) -> None:
+    """Run ValueAI RAG evaluation on results and write summary."""
+    client = _build_valueai_client()
+    aggregate = {
+        "count": len(results),
+        "exact_match_rate": 0.0,
+        "avg_token_f1": 0.0,
+        "avg_rouge_l_f1": 0.0,
+        "avg_primary_score": 0.0,
+    }
+    em_count = 0
+    sum_tf1 = 0.0
+    sum_rl = 0.0
+    sum_ps = 0.0
+
+    for r in results:
+        try:
+            valueai_answer = client.ask(r.question)
+            metrics = evaluate_answer_pair(r.answer, valueai_answer)
+            r.valueai_answer = valueai_answer
+            r.evaluation_metrics = metrics
+            if metrics.get("exact_match"):
+                em_count += 1
+            sum_tf1 += float(metrics["token_f1"]["f1"])
+            sum_rl += float(metrics["rouge_l"]["f1"])
+            sum_ps += float(metrics["primary_score"])
+        except Exception as e:  # noqa: PERF203
+            logger.exception("ValueAI error for question: %s", r.question[:50])
+            r.valueai_answer = None
+            r.evaluation_metrics = {"error": str(e)}
+
+    if results:
+        aggregate["exact_match_rate"] = em_count / len(results)
+        aggregate["avg_token_f1"] = sum_tf1 / len(results)
+        aggregate["avg_rouge_l_f1"] = sum_rl / len(results)
+        aggregate["avg_primary_score"] = sum_ps / len(results)
+
+    if summary_file is None:
+        summary_file = output_file.with_name(f"{output_file.stem}_valueai_eval.json")
+    summary_payload = {
+        "pdf_path": str(pdf_path),
+        "num_questions": num_questions,
+        "aggregate_metrics": aggregate,
+    }
+    with summary_file.open("w", encoding="utf-8") as f:
+        json.dump(summary_payload, f, ensure_ascii=False, indent=2)
+    logger.info("ValueAI evaluation summary saved to: %s", summary_file)
+    with output_file.open("w", encoding="utf-8") as f:
+        json.dump([r.model_dump() for r in results], f, ensure_ascii=False, indent=2)
 
 
 def generate_qa_from_pdf(
@@ -174,12 +226,9 @@ def generate_qa_from_pdf(
     list[QAResult]
         List of generated QA results
     """
-    # DEBUG
-    print(f"🔍 DEBUG - evaluate_with_valueai in generator: {evaluate_with_valueai}")
-    print(f"🔍 DEBUG - Type: {type(evaluate_with_valueai)}")
-
     if not pdf_path.exists():
-        raise FileNotFoundError(f"PDF файл не найден: {pdf_path}")
+        msg = f"PDF файл не найден: {pdf_path}"
+        raise FileNotFoundError(msg)
 
     logger.info(f"Чтение PDF: {pdf_path}")
     reader = PdfReader(pdf_path)
@@ -207,7 +256,8 @@ def generate_qa_from_pdf(
             max_questions=max_questions, default=default_questions
         )
     if not (1 <= num_questions <= max_questions):
-        raise ValueError(f"num_questions must be in range 1..{max_questions}. Got: {num_questions}")
+        msg = f"num_questions must be in range 1..{max_questions}. Got: {num_questions}"
+        raise ValueError(msg)
 
     selected_chunks = random.sample(text_chunks, num_questions)
 
@@ -221,7 +271,7 @@ def generate_qa_from_pdf(
         output_file = Path("qa_result.json")
 
     # Save results
-    with open(output_file, "w", encoding="utf-8") as f:
+    with output_file.open("w", encoding="utf-8") as f:
         json.dump(
             [r.model_dump() for r in results],
             f,
@@ -238,62 +288,12 @@ def generate_qa_from_pdf(
         logger.info(f"Ответ: {r.answer}")
 
     if evaluate_with_valueai:
-        print(" DEBUG - evaluate_with_valueai is True, building client...")
-        client = _build_valueai_client()
-
-        aggregate = {
-            "count": len(results),
-            "exact_match_rate": 0.0,
-            "avg_token_f1": 0.0,
-            "avg_rouge_l_f1": 0.0,
-            "avg_primary_score": 0.0,
-        }
-
-        em_count = 0
-        sum_tf1 = 0.0
-        sum_rl = 0.0
-        sum_ps = 0.0
-
-        for r in results:
-            try:
-                print(f" DEBUG - Asking ValueAI question: {r.question[:50]}...")
-                valueai_answer = client.ask(r.question)
-                print(f" DEBUG - Got answer: {valueai_answer[:50]}...")
-                metrics = evaluate_answer_pair(r.answer, valueai_answer)
-                r.valueai_answer = valueai_answer
-                r.evaluation_metrics = metrics
-
-                if metrics.get("exact_match"):
-                    em_count += 1
-                sum_tf1 += float(metrics["token_f1"]["f1"])
-                sum_rl += float(metrics["rouge_l"]["f1"])
-                sum_ps += float(metrics["primary_score"])
-            except Exception as e:
-                print(f" DEBUG - Error in ValueAI: {e}")
-                r.valueai_answer = None
-                r.evaluation_metrics = {"error": str(e)}
-
-        if results:
-            aggregate["exact_match_rate"] = em_count / len(results)
-            aggregate["avg_token_f1"] = sum_tf1 / len(results)
-            aggregate["avg_rouge_l_f1"] = sum_rl / len(results)
-            aggregate["avg_primary_score"] = sum_ps / len(results)
-
-        if summary_file is None:
-            summary_file = output_file.with_name(f"{output_file.stem}_valueai_eval.json")
-
-        summary_payload = {
-            "pdf_path": str(pdf_path),
-            "num_questions": num_questions,
-            "aggregate_metrics": aggregate,
-        }
-        with open(summary_file, "w", encoding="utf-8") as f:
-            json.dump(summary_payload, f, ensure_ascii=False, indent=2)
-        logger.info(f"ValueAI evaluation summary saved to: {summary_file}")
-
-        with open(output_file, "w", encoding="utf-8") as f:
-            json.dump([r.model_dump() for r in results], f, ensure_ascii=False, indent=2)
-    else:
-        print("🔍 DEBUG - evaluate_with_valueai is False, skipping ValueAI")
+        _run_valueai_evaluation(
+            results=results,
+            pdf_path=pdf_path,
+            num_questions=num_questions,
+            output_file=output_file,
+            summary_file=summary_file,
+        )
 
     return results
