@@ -5,18 +5,66 @@ import logging
 import random
 import sys
 from pathlib import Path
-
-import requests
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pypdf import PdfReader
 
 from configs.settings import settings
-from rag_med.evaluation.metrics import evaluate_answer_pair
+from configs.llm_api_client import get_token, predict_sync
+from rag_med.evaluation.metrics import (
+    compare_two_answers,
+    evaluate_answer_pair_llm_alignment,
+    evaluate_answer_pair_ragas_extended,
+)
 from rag_med.valueai.client import ValueAIRagClient, ValueAIRagClientConfig
 
 from rag_med.qa_generator.models import QAResult
 
 logger = logging.getLogger(__name__)
+
+
+CHUNKS_PER_QA = 4  
+
+
+def _extract_qa_from_json_like(text: str) -> tuple[str, str] | None:
+    """Extract question and answer from JSON-like text. Handles truncated JSON (missing closing \"})."""
+    if not text or "question" not in text.lower() or "answer" not in text.lower():
+        return None
+    for label in ('"question": "', '"Вопрос": "'):
+        q_start = text.find(label)
+        if q_start == -1:
+            continue
+        start = q_start + len(label)
+        i = start
+        while i < len(text):
+            if text[i] == "\\" and i + 1 < len(text):
+                i += 2
+                continue
+            if text[i] == '"':
+                question = text[start:i].replace("\\n", "\n").replace('\\"', '"').strip()
+                break
+            i += 1
+        else:
+            continue
+        for a_label in ('"answer": "', '"Ответ": "'):
+            a_start = text.find(a_label, i)
+            if a_start == -1:
+                continue
+            start_a = a_start + len(a_label)
+            j = start_a
+            while j < len(text):
+                if text[j] == "\\" and j + 1 < len(text):
+                    j += 2
+                    continue
+                if text[j] == '"':
+                    answer = text[start_a:j]
+                    break
+                j += 1
+            else:
+                answer = text[start_a:]  # truncated JSON
+            answer = answer.replace("\\n", "\n").replace('\\"', '"').strip()
+            if question or answer:
+                return (question, answer)
+    return None
 
 
 def generate_qa(chunk: str, chunk_index: int = 1) -> QAResult:
@@ -34,42 +82,77 @@ def generate_qa(chunk: str, chunk_index: int = 1) -> QAResult:
     QAResult
         Generated QA result
     """
-    prompt = f"""На основе медицинского текста создай 1 клинический вопрос и краткий ответ.
+    prompt = f"""По медицинскому тексту составь один клинический вопрос и развёрнутый ответ. Без markdown. Ответь только валидным JSON в формате:
+{{"question": "текст вопроса", "answer": "текст ответа"}}
 
-ТЕКСТ:
-{chunk}
-
-ФОРМАТ ОТВЕТА (строго):
-Вопрос: ...
-Ответ: ..."""
+Текст:
+{chunk}"""
 
     question = ""
     answer = ""
     generated_text = ""
 
+    model_used = getattr(settings, "metrics_llm_model_name", "llm_qwen_2_5_coder_32b_instruct_q8")
     try:
-        url = f"{settings.ollama_base_url}/completions"
-        headers = {"Content-Type": "application/json"}
-        data = {
-            "model": settings.model_name,
-            "prompt": prompt,
-            "temperature": settings.temperature,
-            "max_tokens": settings.max_tokens,
-        }
+        base_url = (getattr(settings, "valueai_base_url", None) or "").rstrip("/")
+        token = get_token(
+            base_url,
+            getattr(settings, "valueai_username", "") or "",
+            getattr(settings, "valueai_password", "") or "",
+        )
+        generated_text = predict_sync(
+            base_url,
+            token,
+            model_name=model_used,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=getattr(settings, "max_tokens", 5000),
+            temperature=getattr(settings, "temperature", 0.7),
+            poll_interval=getattr(settings, "metrics_llm_poll_interval_seconds", 2.0),
+            timeout=getattr(settings, "metrics_llm_timeout_seconds", 120.0),
+        )
 
-        response = requests.post(url, headers=headers, json=data, timeout=60)
-        response.raise_for_status()
-        result = response.json()
+        
+        parsed = False
+        if generated_text.strip():
+            text = generated_text.strip()
+            
+            if "```" in text:
+                start = text.find("```json") + 7 if "```json" in text else text.find("```") + 3
+                end = text.find("```", start)
+                if end > start:
+                    text = text[start:end].strip()
+            if "{" in text and "}" in text:
+                try:
+                    start = text.index("{")
+                    end = text.rindex("}") + 1
+                    obj = json.loads(text[start:end])
+                    if isinstance(obj, dict):
+                        q = obj.get("question") or obj.get("Вопрос")
+                        a = obj.get("answer") or obj.get("Ответ")
+                        if q and a:
+                            question = q.strip() if isinstance(q, str) else str(q)
+                            answer = a.strip() if isinstance(a, str) else str(a)
+                            parsed = True
+                except (json.JSONDecodeError, ValueError, TypeError):
+                    
+                    extracted = _extract_qa_from_json_like(text)
+                    if extracted:
+                        question, answer = extracted
+                        parsed = bool(question and answer)
 
-        if "choices" in result and len(result["choices"]) > 0:
-            generated_text = result["choices"][0].get("text", "")
-
-        for line in generated_text.split("\n"):
-            line_clean = line.strip()
-            if line_clean.startswith("Вопрос:"):
-                question = line_clean.replace("Вопрос:", "").strip()
-            elif line_clean.startswith("Ответ:"):
-                answer = line_clean.replace("Ответ:", "").strip()
+        
+        if not parsed:
+            if "Ответ:" in generated_text:
+                parts = generated_text.split("Ответ:", 1)
+                before_answer = parts[0].strip()
+                answer = parts[1].strip() if len(parts) > 1 else ""
+                if "Вопрос:" in before_answer:
+                    question = before_answer.split("Вопрос:", 1)[-1].strip()
+                else:
+                    question = before_answer
+            else:
+                question = ""
+                answer = ""
 
         if not question or not answer:
             lines = [line.strip() for line in generated_text.split("\n") if line.strip()]
@@ -78,7 +161,7 @@ def generate_qa(chunk: str, chunk_index: int = 1) -> QAResult:
                 answer = lines[1]
 
     except Exception as e:
-        logger.exception("Ошибка при вызове модели Ollama")
+        logger.exception("Ошибка при вызове LLM (ValueAI)")
         generated_text = f"Ошибка: модель не ответила - {e!s}"
         question = "Ошибка"
         answer = "Ошибка"
@@ -88,7 +171,7 @@ def generate_qa(chunk: str, chunk_index: int = 1) -> QAResult:
         chunk=chunk,
         chunk_length_chars=len(chunk),
         chunk_length_words=len(chunk.split()),
-        model_used=settings.model_name,
+        model_used=model_used,
         question=question,
         answer=answer,
         raw_model_output=generated_text,
@@ -96,7 +179,7 @@ def generate_qa(chunk: str, chunk_index: int = 1) -> QAResult:
 
 
 def _prompt_num_questions(max_questions: int, default: int) -> int:
-    """Prompt user for number of QA items to generate."""
+    
     if max_questions <= 0:
         raise ValueError("max_questions must be positive")
 
@@ -121,7 +204,7 @@ def _prompt_num_questions(max_questions: int, default: int) -> int:
 
 
 def _build_valueai_client() -> ValueAIRagClient:
-    """Build ValueAI client with credentials."""
+    
     if not settings.valueai_username or not settings.valueai_password:
         raise ValueError(
             "ValueAI credentials are not configured. "
@@ -151,37 +234,88 @@ def _run_valueai_evaluation(
     client = _build_valueai_client()
     aggregate = {
         "count": len(results),
-        "exact_match_rate": 0.0,
-        "avg_token_f1": 0.0,
-        "avg_rouge_l_f1": 0.0,
-        "avg_primary_score": 0.0,
+        "avg_faithfulness": 0.0,
+        "avg_cosine_similarity": 0.0,
+        "avg_factual_correctness": 0.0,
+        "avg_llm_alignment_score": 0.0,
     }
-    em_count = 0
-    sum_tf1 = 0.0
-    sum_rl = 0.0
-    sum_ps = 0.0
+    sum_faith = 0.0
+    sum_cos = 0.0
+    sum_factual = 0.0
+    sum_alignment = 0.0
+    n_evaluated = 0
 
     for r in results:
+        
+        if (not r.question or not r.answer or
+                r.question.strip() == "Ошибка" or r.answer.strip() == "Ошибка" or
+                "Ошибка при вызове" in (r.answer or "") or "модель не ответила" in (r.raw_model_output or "")):
+            logger.warning("Пропуск ValueAI для chunk %s: генерация не удалась", r.chunk_index)
+            r.valueai_answer = None
+            r.evaluation_metrics = {"skipped": "generation failed"}
+            continue
         try:
             valueai_answer = client.ask(r.question)
-            metrics = evaluate_answer_pair(r.answer, valueai_answer)
+            metrics: dict = {}
+
+            # RAGAS (etalon = context, ValueAI = response)
+            ragas = evaluate_answer_pair_ragas_extended(
+                question=r.question,
+                response=valueai_answer,
+                retrieved_contexts=[r.answer],
+                reference_answer=None,
+            )
+            metrics["ragas_faithfulness"] = ragas.get("faithfulness")
+            if ragas.get("error") is not None:
+                metrics["ragas_error"] = ragas["error"]
+
+            
+            text_metrics = compare_two_answers(reference=r.answer, candidate=valueai_answer)
+            metrics["cosine_similarity"] = text_metrics.get("cosine_similarity")
+            metrics["factual_correctness"] = text_metrics.get("factual_correctness")
+            if text_metrics.get("factual_error") is not None:
+                metrics["factual_error"] = text_metrics["factual_error"]
+
+            # LLM judge (1–10) RAG vs etalon
+            llm_judge = evaluate_answer_pair_llm_alignment(
+                question=r.question,
+                etalon_answer=r.answer,
+                rag_answer=valueai_answer,
+                context=(r.chunk or ""),
+            )
+            metrics["llm_alignment_score"] = llm_judge.get("alignment_score")
+            metrics["llm_alignment_comment"] = llm_judge.get("alignment_comment")
+            if llm_judge.get("alignment_error") is not None:
+                metrics["llm_alignment_error"] = llm_judge["alignment_error"]
+
             r.valueai_answer = valueai_answer
             r.evaluation_metrics = metrics
-            if metrics.get("exact_match"):
-                em_count += 1
-            sum_tf1 += float(metrics["token_f1"]["f1"])
-            sum_rl += float(metrics["rouge_l"]["f1"])
-            sum_ps += float(metrics["primary_score"])
+
+            v_faith = metrics.get("ragas_faithfulness")
+            if v_faith is not None:
+                sum_faith += float(v_faith)
+            v_cos = metrics.get("cosine_similarity")
+            if v_cos is not None:
+                sum_cos += float(v_cos)
+            v_factual = metrics.get("factual_correctness")
+            if v_factual is not None:
+                sum_factual += float(v_factual)
+            v_align = metrics.get("llm_alignment_score")
+            if v_align is not None:
+                sum_alignment += float(v_align)
+            n_evaluated += 1
         except Exception as e:  # noqa: PERF203
             logger.exception("ValueAI error for question: %s", r.question[:50])
             r.valueai_answer = None
             r.evaluation_metrics = {"error": str(e)}
 
-    if results:
-        aggregate["exact_match_rate"] = em_count / len(results)
-        aggregate["avg_token_f1"] = sum_tf1 / len(results)
-        aggregate["avg_rouge_l_f1"] = sum_rl / len(results)
-        aggregate["avg_primary_score"] = sum_ps / len(results)
+    if results and n_evaluated > 0:
+        n = n_evaluated
+        aggregate["avg_faithfulness"] = sum_faith / n
+        aggregate["avg_cosine_similarity"] = sum_cos / n
+        aggregate["avg_factual_correctness"] = sum_factual / n
+        aggregate["avg_llm_alignment_score"] = sum_alignment / n
+    aggregate["evaluated_count"] = n_evaluated
 
     if summary_file is None:
         summary_file = output_file.with_name(f"{output_file.stem}_valueai_eval.json")
@@ -205,31 +339,14 @@ def generate_qa_from_pdf(
     evaluate_with_valueai: bool = False,
     summary_file: Path | None = None,
 ) -> list[QAResult]:
-    """Generate QA pairs from PDF file.
-
-    Parameters
-    ----------
-    pdf_path : Path
-        Path to PDF file
-    output_file : Path | None
-        Output JSON file path. If None, creates qa_result.json in current directory
-    num_questions : int | None
-        How many QA items to generate. If None, prompts after chunking (interactive) and
-        falls back to default in non-interactive mode.
-    evaluate_with_valueai : bool
-        If True, sends generated questions to ValueAI RAG and compares answers.
-    summary_file : Path | None
-        Where to write evaluation summary JSON (only when evaluate_with_valueai is True).
-
-    Returns
-    -------
-    list[QAResult]
-        List of generated QA results
-    """
     if not pdf_path.exists():
         msg = f"PDF файл не найден: {pdf_path}"
         raise FileNotFoundError(msg)
 
+    logger.info(
+        "Используется модель для генерации Q&A: %s (config: metrics_llm_model_name)",
+        getattr(settings, "metrics_llm_model_name", "llm_qwen_2_5_coder_32b_instruct_q8"),
+    )
     logger.info(f"Чтение PDF: {pdf_path}")
     reader = PdfReader(pdf_path)
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
@@ -246,9 +363,13 @@ def generate_qa_from_pdf(
 
     text_chunks = [c for c in chunks if len(c.strip().split()) > settings.min_chunk_words]
 
-    max_questions = len(text_chunks)
+    
+    max_questions = len(text_chunks) // CHUNKS_PER_QA
     if max_questions <= 0:
-        raise ValueError("Не найдено достаточно длинных текстовых chunk-ов для генерации вопросов.")
+        raise ValueError(
+            f"Не найдено достаточно chunk-ов. Нужно минимум {CHUNKS_PER_QA} chunk-ов для одного вопроса, "
+            f"сейчас: {len(text_chunks)}."
+        )
 
     default_questions = min(settings.num_chunks_to_select, max_questions)
     if num_questions is None:
@@ -259,18 +380,25 @@ def generate_qa_from_pdf(
         msg = f"num_questions must be in range 1..{max_questions}. Got: {num_questions}"
         raise ValueError(msg)
 
-    selected_chunks = random.sample(text_chunks, num_questions)
+    
+    n_chunks_needed = num_questions * CHUNKS_PER_QA
+    selected_chunks = random.sample(text_chunks, n_chunks_needed)
 
     results = []
-    for idx, chunk in enumerate(selected_chunks, start=1):
-        logger.info(f"Обработка chunk {idx} ({len(chunk)} символов, {len(chunk.split())} слов)...")
-        result = generate_qa(chunk, idx)
+    for idx in range(num_questions):
+        group = selected_chunks[idx * CHUNKS_PER_QA : (idx + 1) * CHUNKS_PER_QA]
+        combined_chunk = "\n\n".join(group)
+        logger.info(
+            f"Обработка группы {idx + 1}/{num_questions} (4 chunk-а, "
+            f"{len(combined_chunk)} символов, {len(combined_chunk.split())} слов)..."
+        )
+        result = generate_qa(combined_chunk, idx + 1)
         results.append(result)
 
     if output_file is None:
         output_file = Path("qa_result.json")
 
-    # Save results
+    
     with output_file.open("w", encoding="utf-8") as f:
         json.dump(
             [r.model_dump() for r in results],

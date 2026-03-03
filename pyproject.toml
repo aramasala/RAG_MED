@@ -41,6 +41,9 @@ PyMuPDF = "^1.26.7"
 click = "^8.3.1"
 typer = {extras = ["all"], version = "^0.24.0"}
 rich = "^13.7.1"
+ragas = "^0.4.0"
+openai = "^1.0.0"
+rouge-score = "^0.1.2"
 
 [tool.poetry.group.dev.dependencies]
 python-dotenv = "^1.1.1"
@@ -231,6 +234,8 @@ module = [
   "pypdf.*",
   "langchain.*",
   "requests.*",
+  "ragas.*",
+  "openai.*",
 ]
 ignore_missing_imports = true
 

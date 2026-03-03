@@ -11,6 +11,7 @@ from rich.table import Table
 from . import __version__
 from .pdf_cleaner import clean_pdf
 from .qa_generator import generate_qa_from_pdf
+from configs.settings import settings as _settings
 
 app = typer.Typer(
     name="rag-med",
@@ -103,8 +104,8 @@ def _build_results_table(results: list, valueai_eval: bool) -> None:
         if valueai_eval:
             valueai_text = r.valueai_answer or ""
             metrics = r.evaluation_metrics or {}
-            if "primary_score" in metrics:
-                score_text = f"{metrics['primary_score']:.3f}"
+            if "faithfulness" in metrics:
+                score_text = f"{metrics['faithfulness']:.3f}"
             elif "error" in metrics:
                 score_text = "ERR"
         row = [
@@ -139,6 +140,10 @@ def generate(
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
+    logger.info(
+        "Модель для генерации: %s (config: metrics_llm_model_name / METRICS_LLM_MODEL_NAME)",
+        getattr(_settings, "metrics_llm_model_name", "llm_qwen_2_5_coder_32b_instruct_q8"),
+    )
     try:
         # Convert string paths to Path objects
         output_path = Path(output_file) if output_file else None

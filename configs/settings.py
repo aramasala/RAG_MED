@@ -6,19 +6,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Application settings."""
 
-    # Ollama settings
-    ollama_base_url: str = "http://dgx-spark.waveaccess.ru:11434/v1"
-    model_name: str = "llm_qwen_3_32b_q8"
     temperature: float = 0.7
-    max_tokens: int = 500
+    max_tokens: int = 5000
 
     # Text splitting settings
     chunk_size: int = 2000
     chunk_overlap: int = 200
     min_chunk_words: int = 20
-    num_chunks_to_select: int = 3
+    num_chunks_to_select: int = 6
 
-    # PDF cleaning settings
     start_section_text: str = "Список литературы"
     end_section_text: str = "Приложение А2. Методология разработки клинических рекомендаций"
 
@@ -30,7 +26,13 @@ class Settings(BaseSettings):
     valueai_model_name: str = "llm_qwen_3_32b_q8"
     valueai_instructions: str = "you are helpful assistant"
     valueai_poll_interval_seconds: float = 2.0
-    valueai_timeout_seconds: float = 120.0
+    valueai_timeout_seconds: float = 600  
+    ragas_max_tokens: int = 8192
+
+    # Metrics LLM
+    metrics_llm_model_name: str = "llm_qwen_2_5_coder_32b_instruct_q8"
+    metrics_llm_poll_interval_seconds: float = 2.0
+    metrics_llm_timeout_seconds: float = 600
 
     model_config = SettingsConfigDict(
         env_file=".env",

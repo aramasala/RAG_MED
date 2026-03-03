@@ -45,7 +45,10 @@ htmlcov/
 !.env.example
 
 # Project specific
+debug/
 qa_result*.json
+test_metrics_result.json
+test_metrics_result.txt
 *_cleaned.pdf
 tmp/
 temp/

@@ -24,7 +24,7 @@ class ValueAIRagClientConfig:
     enable_metainfo: bool = True
     return_context: bool = True
     poll_interval_seconds: float = 2.0
-    timeout_seconds: float = 120.0
+    timeout_seconds: float = 600.0
 
 
 class ValueAIRagClient:

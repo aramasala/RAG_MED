@@ -14,9 +14,7 @@ class QAResult(BaseModel):
     question: str = Field(..., description="Generated question")
     answer: str = Field(..., description="Generated answer")
     raw_model_output: str = Field(..., description="Raw output from model")
-
-    # Optional evaluation against external RAG system (ValueAI)
     valueai_answer: str | None = Field(None, description="Answer returned by ValueAI RAG")
     evaluation_metrics: dict | None = Field(
-        None, description="Comparison metrics between generated and ValueAI answers"
+        None, description="faithfulness (RAGAS), cosine_similarity, or error"
     )
