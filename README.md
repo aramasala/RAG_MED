@@ -231,7 +231,7 @@ METRICS_LLM_TIMEOUT_SECONDS=120
 
 QA generation and evaluation use the **ValueAI** LLM (credentials and model from .env / `configs/settings`). With `--valueai-eval`, RAGAS (Faithfulness, FactualCorrectness) and an LLM alignment judge (1–10) are computed against ValueAI RAG answers.
 
-### Метрики оценки (что показывает каждая метрика)
+### Метрики оценки 
 
 - **faithfulness** (RAGAS) — насколько ответ RAG опирается на извлечённые контексты; нет ли неподтверждённых утверждений (галлюцинаций). Оценка 0–1.
 - **factual_correctness** (RAGAS) — фактическая правильность ответа по сравнению с эталонным ответом (reference). Оценка 0–1.
