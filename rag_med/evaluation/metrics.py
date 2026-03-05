@@ -100,7 +100,7 @@ def _get_ragas_llm():  # noqa: ANN201
     from ragas.llms import llm_factory
 
     if _use_valueai_llm():
-        from configs.llm_api_client import ValueAIAsyncOpenAI, get_token
+        from rag_med.valueai.llm_api_client import ValueAIAsyncOpenAI, get_token
 
         base = (getattr(settings, "valueai_base_url", None) or "").rstrip("/")
         token = get_token(
@@ -304,7 +304,7 @@ def evaluate_answer_pair_llm_alignment(
 
     try:
         if _use_valueai_llm():
-            from configs.llm_api_client import get_token, predict_sync
+            from rag_med.valueai.llm_api_client import get_token, predict_sync
 
             base = (getattr(settings, "valueai_base_url", None) or "").rstrip("/")
             token = get_token(

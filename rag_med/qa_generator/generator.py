@@ -9,7 +9,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pypdf import PdfReader
 
 from configs.settings import settings
-from configs.llm_api_client import get_token, predict_sync
+from rag_med.valueai.llm_api_client import get_token, predict_sync
 from rag_med.evaluation.metrics import (
     compare_two_answers,
     evaluate_answer_pair_llm_alignment,

@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 import time
 from types import SimpleNamespace
@@ -295,3 +294,4 @@ class ValueAIAsyncOpenAI(AsyncOpenAI):
     @property
     def chat(self):
         return _ValueAIChat(self)
+

@@ -160,11 +160,10 @@ RUN_METRICS_TEST_JSON=/path/to/my_samples.json poetry run python run_metrics_tes
 
 ```
 RAG_MED/
-├── configs/              # Configuration and paths (settings, PROJECT_DPATH, ValueAI LLM client)
+├── configs/              # Configuration and paths (settings, PROJECT_DPATH)
 │   ├── __init__.py
 │   ├── settings.py
-│   ├── paths.py
-│   └── llm_api_client.py
+│   └── paths.py
 ├── docs/                 # Documentation
 ├── notebooks/            # Jupyter notebooks (demos, experiments)
 ├── reports/              # Generated reports and QA outputs
@@ -182,9 +181,10 @@ RAG_MED/
 │   ├── evaluation/       # Answer evaluation metrics
 │   │   ├── __init__.py
 │   │   └── metrics.py
-│   └── valueai/          # ValueAI RAG client
+│   └── valueai/          # ValueAI RAG client and LLM API
 │       ├── __init__.py
-│       └── client.py
+│       ├── client.py
+│       └── llm_api_client.py
 ├── tests/                # Tests
 │   ├── unit/
 │   ├── integration/
